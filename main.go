@@ -22,8 +22,14 @@ type Volume struct {
 	Name        string
 	Description string
 	Server      Server
+	CustsvcList []Custsvc
 	AppList     []Apps
 	PortList    []Ports
+}
+type Custsvc struct {
+	Id          int
+	Name        string
+	Description string
 }
 type Server struct {
 	Id       int
@@ -57,7 +63,7 @@ func Handler(response http.ResponseWriter, request *http.Request) {
 // DB CONNECTION INFO
 const (
 	DB_HOST = "tcp(***REMOVED***:3306)"
-	DB_NAME = "***REMOVED***s"
+	DB_NAME = "***REMOVED***"
 	DB_USER = "***REMOVED***"
 	DB_PASS = "***REMOVED***"
 )
@@ -150,66 +156,90 @@ func APIHandler(response http.ResponseWriter, request *http.Request) {
 		// App should be related to a Customer-facing service which is related
 		// to the Volume. A Volume has Customer-Facing Services. Those Customer
 		// Services have Apps.
+		var custsvcs_id int
 
-		// APPS
-		// This is how we deal with an array instead of the single rows
-		var app_id int
-
-		// Separate Query From Scan. Note using db.Query instead of db.QueryRow
-		approws, err := db.Query("select app_id from VOL_APPS where volume_id = " + strconv.Itoa(tmpvolume.Id))
-		// fmt.Println(tmpvolume.Id)
+		custsvcrows, err := db.Query("select custsvcs_id from VOL_CUSTSVCS where volume_id = " + strconv.Itoa(tmpvolume.Id))
 		if err != nil {
 			fmt.Println(err.Error())
 			return // only if you want to quit if there are no apps
 		}
-		// We wil loop over the results and put them in a temporary instance of the Apps{} struct
-		for approws.Next() {
-			tmpapp := Apps{}
-			tmpapp.Id = app_id
-			strtmpid := strconv.Itoa(tmpapp.Id)
-			err = approws.Scan(&strtmpid)
+		for custsvcrows.Next() {
+			tmpcustsvc := Custsvc{}
+			tmpcustsvc.Id = custsvcs_id
+			strtmpid := strconv.Itoa(tmpcustsvc.Id)
+			err = custsvcrows.Scan(&strtmpid)
 			// fmt.Println(strtmpid)
 			if err != nil {
 				fmt.Print(err)
 			}
 			// Within The Loop, need to Query & Scan for the App's Id & Name
-			err = db.QueryRow("SELECT id, name from APPS where id = "+strtmpid).Scan(&tmpapp.Id, &tmpapp.Name)
+			err = db.QueryRow("SELECT id, name from CUSTSVCS where id = "+strtmpid).Scan(&tmpcustsvc.Id, &tmpcustsvc.Name)
 			if err != nil {
 				fmt.Print(err)
 			}
 
-			// PORTS
-			// This is how we deal with an array Subquery (Ports) of an array (Apps)
-			// Still in the Apps Loop, we basically do the same thing as Apps
+			// APPS
+			// This is how we deal with an array instead of the single rows
+			var app_id int
 
-			var portid int
-
-			portrows, err := db.Query("select port_id from APPS_PORTS where app_id = " + strtmpid)
+			// Separate Query From Scan. Note using db.Query instead of db.QueryRow
+			approws, err := db.Query("select app_id from VOL_APPS where volume_id = " + strconv.Itoa(tmpvolume.Id))
+			// fmt.Println(tmpvolume.Id)
 			if err != nil {
 				fmt.Println(err.Error())
-				return // only if you want to quit if there are no Ports
+				return // only if you want to quit if there are no apps
 			}
-			for portrows.Next() {
-				tmpport := Ports{}
-				tmpport.Id = portid
-				strtmpportid := strconv.Itoa(tmpport.Id)
-				err = portrows.Scan(&strtmpportid)
-				// fmt.Println(strtmpportid)
+			// We wil loop over the results and put them in a temporary instance of the Apps{} struct
+			for approws.Next() {
+				tmpapp := Apps{}
+				tmpapp.Id = app_id
+				strtmpid := strconv.Itoa(tmpapp.Id)
+				err = approws.Scan(&strtmpid)
+				// fmt.Println(strtmpid)
+				if err != nil {
+					fmt.Print(err)
+				}
+				// Within The Loop, need to Query & Scan for the App's Id & Name
+				err = db.QueryRow("SELECT id, name from APPS where id = "+strtmpid).Scan(&tmpapp.Id, &tmpapp.Name)
 				if err != nil {
 					fmt.Print(err)
 				}
 
-				err = db.QueryRow("SELECT id, name from PORTS where id = "+strtmpportid).Scan(&tmpport.Id, &tmpport.Name)
+				// PORTS
+				// This is how we deal with an array Subquery (Ports) of an array (Apps)
+				// Still in the Apps Loop, we basically do the same thing as Apps
+
+				var portid int
+
+				portrows, err := db.Query("select port_id from APPS_PORTS where app_id = " + strtmpid)
 				if err != nil {
-					fmt.Print(err)
+					fmt.Println(err.Error())
+					return // only if you want to quit if there are no Ports
 				}
-				// Append the ports to PortList
-				tmpvolume.PortList = append(tmpvolume.PortList, tmpport)
+				for portrows.Next() {
+					tmpport := Ports{}
+					tmpport.Id = portid
+					strtmpportid := strconv.Itoa(tmpport.Id)
+					err = portrows.Scan(&strtmpportid)
+					// fmt.Println(strtmpportid)
+					if err != nil {
+						fmt.Print(err)
+					}
+
+					err = db.QueryRow("SELECT id, name from PORTS where id = "+strtmpportid).Scan(&tmpport.Id, &tmpport.Name)
+					if err != nil {
+						fmt.Print(err)
+					}
+					// Append the ports to PortList
+					tmpvolume.PortList = append(tmpvolume.PortList, tmpport)
+				}
+				// Append the tmpapp to AppList
+				tmpvolume.AppList = append(tmpvolume.AppList, tmpapp)
 			}
-			// Append the tmpapp to AppList
-			tmpvolume.AppList = append(tmpvolume.AppList, tmpapp)
+			// Append tmpcustsvc to Custsvc
+			tmpvolume.CustsvcList = append(tmpvolume.CustsvcList, tmpcustsvc)
+
 		}
-
 		// Marshal Json, Tamer of the Wild Wild West
 
 		json, err := json.Marshal(tmpvolume)
